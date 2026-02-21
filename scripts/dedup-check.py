@@ -43,13 +43,11 @@ def save_index(index_file, index):
 
 def check_topic(topic, index):
     """Check topic by keywords. Returns a list of matches."""
-    topic_words = set(re.findall(r'[а-яА-ЯёЁa-zA-Z]{4,}', topic.lower()))
-    stop = {'это', 'свой', 'свои', 'того', 'этот', 'этого', 'будет', 'было', 'более',
-            'когда', 'если', 'может', 'можно', 'нужно', 'надо', 'через', 'между',
-            'просто', 'новый', 'новые', 'первый', 'один', 'одна', 'agent', 'agents',
-            'this', 'that', 'with', 'from', 'have', 'been', 'will', 'what', 'when',
+    topic_words = set(re.findall(r'[^\W\d_]{4,}', topic.lower(), re.UNICODE))
+    stop = {'this', 'that', 'with', 'from', 'have', 'been', 'will', 'what', 'when',
             'which', 'their', 'about', 'would', 'could', 'should', 'more', 'some',
-            'into', 'than', 'other', 'these', 'those', 'just', 'also', 'only'}
+            'into', 'than', 'other', 'these', 'those', 'just', 'also', 'only',
+            'agent', 'agents'}
     topic_words -= stop
 
     matches = []
@@ -124,7 +122,7 @@ def add_post(index_file, msg_id, topic, links=None, keywords=None):
         return False
 
     if not keywords:
-        keywords = list(set(re.findall(r'[а-яА-ЯёЁa-zA-Z]{4,}', topic.lower())))
+        keywords = list(set(re.findall(r'[^\W\d_]{4,}', topic.lower(), re.UNICODE)))
 
     index.append({
         'msgId': msg_id,
