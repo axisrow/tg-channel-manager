@@ -271,7 +271,7 @@ def channel_info(workspace, name, bot_token, flags):
             content = f.read()
         draft_count = content.count("**Status:** draft")
         pending_count = content.count("**Status:** pending")
-    except (FileNotFoundError, IOError):
+    except OSError:
         pass
 
     # Local block (always)
