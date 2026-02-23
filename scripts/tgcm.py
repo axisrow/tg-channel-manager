@@ -171,7 +171,11 @@ def channel_bind(workspace, name, channel_id):
         print(f"Channel '{name}' not found", file=sys.stderr)
         return 1
 
-    meta = load_channel_meta(channel_dir)
+    try:
+        meta = load_channel_meta(channel_dir)
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"Error reading channel.json: {e}", file=sys.stderr)
+        return 1
     if meta.get("channelId"):
         print(
             f"Channel '{name}' is already bound to {meta['channelId']}",
@@ -213,7 +217,8 @@ def tg_api_call(token, method, params=None):
     except (urllib.error.URLError, OSError) as e:
         print(f"Telegram API {method}: {e}", file=sys.stderr)
         return None
-    except (json.JSONDecodeError, ValueError):
+    except (json.JSONDecodeError, ValueError) as e:
+        print(f"Telegram API {method}: invalid response: {e}", file=sys.stderr)
         return None
 
 
@@ -690,7 +695,7 @@ def parse_tme_posts(html):
         if text_open:
             after = block[text_open.end():]
             depth = 1
-            pos = 0
+            pos = None
             for m in re.finditer(r'<div[^>]*>|</div>', after):
                 if m.group().startswith('</'):
                     depth -= 1
@@ -699,7 +704,7 @@ def parse_tme_posts(html):
                 if depth == 0:
                     pos = m.start()
                     break
-            raw = after[:pos] if pos else after
+            raw = after[:pos] if pos is not None else after
         text = strip_html_tags(raw) if text_open else ""
 
         links = []
@@ -728,7 +733,11 @@ def fetch_posts_cmd(workspace, name, bot_token, limit, dry_run):
         print(f"Channel '{name}' not found", file=sys.stderr)
         return 1
 
-    meta = load_channel_meta(channel_dir)
+    try:
+        meta = load_channel_meta(channel_dir)
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"Error reading channel.json: {e}", file=sys.stderr)
+        return 1
     channel_id = meta.get("channelId")
     if not channel_id:
         print(f"Channel '{name}' is not bound (no channelId)", file=sys.stderr)
