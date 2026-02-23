@@ -260,7 +260,7 @@ def channel_info(workspace, name, bot_token, flags):
             index_data = json.load(f)
         posts = index_data.get("posts", []) if isinstance(index_data, dict) else index_data
         total_posts = len(posts)
-    except (FileNotFoundError, json.JSONDecodeError, IOError):
+    except (json.JSONDecodeError, OSError):
         pass
 
     # Queue stats

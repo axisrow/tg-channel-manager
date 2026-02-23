@@ -144,7 +144,7 @@ def add_post(index_file, msg_id, topic, links=None, keywords=None):
     if not index and os.path.isfile(index_file) and os.path.getsize(index_file) > 0:
         print(f"Error: {index_file} exists but failed to load (corrupt?). "
               "Refusing --add to avoid data loss.", file=sys.stderr)
-        return False
+        return None
 
     if any(p['msgId'] == msg_id for p in index):
         return False
@@ -181,8 +181,10 @@ if __name__ == '__main__':
         sys.exit(0)
 
     if args.add is not None and args.topic:
-        added = add_post(paths['index'], args.add, args.topic, args.links)
-        if added:
+        result = add_post(paths['index'], args.add, args.topic, args.links)
+        if result is None:
+            sys.exit(1)
+        elif result:
             print(f"✅ Post {args.add} added to index")
         else:
             print(f"⚠️ Post {args.add} already in index")
