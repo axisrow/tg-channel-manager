@@ -46,13 +46,13 @@ Env var: `SEARXNG_URL` — base URL of SearXNG instance (required).
 
 ```bash
 # Check — before drafting (mandatory)
-python3 scripts/dedup-check.py --base-dir /workspace --topic "topic" --links "url1" "url2"
+python3 scripts/dedup-check.py --base-dir {workspace} --topic "topic" --links "url1" "url2"
 
 # Add — after publishing
-python3 scripts/dedup-check.py --base-dir /workspace --add <msgId> --topic "topic" --links "url"
+python3 scripts/dedup-check.py --base-dir {workspace} --add <msgId> --topic "topic" --links "url"
 
 # Rebuild — prints manual instructions (Bot API can't read full history)
-python3 scripts/dedup-check.py --base-dir /workspace --rebuild --channel-id "-100xxx"
+python3 scripts/dedup-check.py --base-dir {workspace} --rebuild --channel-id "-100xxx"
 ```
 
 **Dedup algorithm:** extracts words 4+ chars (Unicode regex `[^\W\d_]{4,}`), removes stopwords, compares exact + stem (first 5 chars) overlap. Threshold: score >= 0.4 AND >= 2 matching terms. URLs are normalized (strip protocol, www, trailing slash) for exact match.

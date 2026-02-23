@@ -62,3 +62,12 @@ def run_tgcm_cli(*args, workspace=None, dm_chat_id=None):
         cmd += ["--dm-chat-id", str(dm_chat_id)]
     cmd += list(args)
     return subprocess.run(cmd, capture_output=True, text=True)
+
+
+@pytest.fixture()
+def tgcm_workspace(tmp_path):
+    """Initialized workspace with one bound channel 'test-chan'."""
+    ws = tmp_path
+    tgcm.channel_init(str(ws), "test-chan")
+    tgcm.channel_bind(str(ws), "test-chan", "-100999")
+    return ws
