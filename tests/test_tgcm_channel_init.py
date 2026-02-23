@@ -38,6 +38,13 @@ class TestChannelInit:
         tgcm.channel_init(str(tmp_path), "testchan")
         assert tgcm.channel_init(str(tmp_path), "testchan") == 1
 
+    def test_seeds_channels_json_from_example(self, tmp_path):
+        tgcm.channel_init(str(tmp_path), "testchan")
+        channels_file = tmp_path / "tgcm" / "channels.json"
+        assert channels_file.exists()
+        data = json.loads(channels_file.read_text())
+        assert isinstance(data, list)
+
 
 class TestValidateChannelName:
     @pytest.mark.parametrize("name", [

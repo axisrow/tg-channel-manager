@@ -22,6 +22,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import sys
 import urllib.error
 import urllib.parse
@@ -108,7 +109,18 @@ def channel_init(workspace, name):
         print(f"Channel '{name}' already exists", file=sys.stderr)
         return 1
 
+    first_init = not os.path.isdir(get_tgcm_root(workspace))
     os.makedirs(channel_dir, exist_ok=True)
+
+    # Seed channels.json from example template on first init
+    if first_init:
+        example = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "references", "channels.example.json",
+        )
+        index_dst = os.path.join(get_tgcm_root(workspace), "channels.json")
+        if os.path.isfile(example) and not os.path.exists(index_dst):
+            shutil.copy2(example, index_dst)
 
     # content-index.json (versioned)
     index_path = os.path.join(channel_dir, "content-index.json")
