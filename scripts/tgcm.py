@@ -160,7 +160,7 @@ def channel_list(workspace):
             try:
                 meta = load_channel_meta(os.path.join(root, entry))
                 channels.append(meta)
-            except (json.JSONDecodeError, KeyError):
+            except (json.JSONDecodeError, KeyError, OSError):
                 continue
 
     if not channels:
@@ -188,7 +188,7 @@ def channel_bind(workspace, name, channel_id):
     except (json.JSONDecodeError, OSError) as e:
         print(f"Error reading channel.json: {e}", file=sys.stderr)
         return 1
-    if meta.get("channelId"):
+    if meta.get("channelId") is not None:
         print(
             f"Channel '{name}' is already bound to {meta['channelId']}",
             file=sys.stderr,
@@ -644,7 +644,7 @@ def event_connect(workspace, channel_id, channel_title=None, dm_chat_id=None):
                             )
                         )
                         return 0
-                except (json.JSONDecodeError, KeyError):
+                except (json.JSONDecodeError, KeyError, OSError):
                     continue
 
     if not dm_chat_id:
@@ -686,7 +686,7 @@ def fetch_tme_page(username, before=None):
         url += f"?before={before}"
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(req, timeout=15) as resp:
-        return resp.read().decode("utf-8")
+        return resp.read().decode("utf-8", errors="replace")
 
 
 def parse_tme_posts(html):
