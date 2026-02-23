@@ -140,6 +140,12 @@ def rebuild_index_instructions(channel_id):
 def add_post(index_file, msg_id, topic, links=None, keywords=None):
     """Add a post to the index after publishing."""
     index = load_index(index_file)
+
+    if not index and os.path.isfile(index_file) and os.path.getsize(index_file) > 0:
+        print(f"Error: {index_file} exists but failed to load (corrupt?). "
+              "Refusing --add to avoid data loss.", file=sys.stderr)
+        return False
+
     if any(p['msgId'] == msg_id for p in index):
         return False
 

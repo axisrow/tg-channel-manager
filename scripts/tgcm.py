@@ -248,7 +248,7 @@ def channel_info(workspace, name, bot_token, flags):
 
     try:
         meta = load_channel_meta(channel_dir)
-    except (json.JSONDecodeError, FileNotFoundError) as e:
+    except (json.JSONDecodeError, OSError) as e:
         print(f"Error reading channel metadata: {e}", file=sys.stderr)
         return 1
 
@@ -372,7 +372,7 @@ def load_local_config(workspace):
     try:
         with open(path, "r") as f:
             return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError):
         return {}
 
 
