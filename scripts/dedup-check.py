@@ -11,7 +11,12 @@ Usage:
 If not specified, the current directory is used.
 """
 
-import json, sys, os, time, re, argparse
+import argparse
+import json
+import os
+import re
+import sys
+import time
 
 
 def get_paths(base_dir):
@@ -32,13 +37,30 @@ def log_perf(perf_log, action, duration_ms, details=""):
 def load_index(index_file):
     if not os.path.exists(index_file):
         return []
-    with open(index_file, "r") as f:
-        return json.load(f)
+    try:
+        with open(index_file, "r") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"Warning: corrupt index {index_file}: {e}", file=sys.stderr)
+        return []
+    if isinstance(data, dict) and "posts" in data:
+        return data["posts"]
+    return data
 
 
 def save_index(index_file, index):
+    # Preserve versioned wrapper if the file already has one
+    wrapper = None
+    if os.path.exists(index_file):
+        try:
+            with open(index_file, "r") as f:
+                existing = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            existing = None
+        if isinstance(existing, dict) and "version" in existing:
+            wrapper = {"version": existing["version"], "posts": index}
     with open(index_file, 'w') as f:
-        json.dump(index, f, ensure_ascii=False, indent=2)
+        json.dump(wrapper if wrapper else index, f, ensure_ascii=False, indent=2)
 
 
 def check_topic(topic, index):
@@ -118,6 +140,17 @@ def rebuild_index_instructions(channel_id):
 def add_post(index_file, msg_id, topic, links=None, keywords=None):
     """Add a post to the index after publishing."""
     index = load_index(index_file)
+
+    if not index and os.path.isfile(index_file) and os.path.getsize(index_file) > 0:
+        try:
+            with open(index_file, "r") as f:
+                json.load(f)
+            # Valid JSON with empty posts — not corrupt, proceed normally
+        except (json.JSONDecodeError, OSError):
+            print(f"Error: {index_file} exists but failed to load (corrupt?). "
+                  "Refusing --add to avoid data loss.", file=sys.stderr)
+            return None
+
     if any(p['msgId'] == msg_id for p in index):
         return False
 
@@ -152,9 +185,11 @@ if __name__ == '__main__':
         rebuild_index_instructions(channel_id)
         sys.exit(0)
 
-    if args.add and args.topic:
-        added = add_post(paths['index'], args.add, args.topic, args.links)
-        if added:
+    if args.add is not None and args.topic:
+        result = add_post(paths['index'], args.add, args.topic, args.links)
+        if result is None:
+            sys.exit(1)
+        elif result:
             print(f"✅ Post {args.add} added to index")
         else:
             print(f"⚠️ Post {args.add} already in index")
