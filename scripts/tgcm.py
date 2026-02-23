@@ -412,10 +412,14 @@ def config_cmd(workspace, action, key=None, value=None):
 
 
 def find_openclaw_config():
-    """Search for openclaw.json in standard locations. Returns path or None."""
+    """Search for openclaw.json in standard locations. Returns path or None.
+
+    Searches in order:
+    1. Current directory (cwd)
+    2. Home directory (~/.openclaw/openclaw.json)
+    """
     candidates = [
         os.path.join(os.getcwd(), "openclaw.json"),
-        os.path.join(os.getcwd(), "..", "openclaw.json"),
         os.path.expanduser("~/.openclaw/openclaw.json"),
     ]
     for path in candidates:
