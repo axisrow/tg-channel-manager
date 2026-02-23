@@ -11,7 +11,12 @@ Usage:
 If not specified, the current directory is used.
 """
 
-import json, sys, os, time, re, argparse
+import argparse
+import json
+import os
+import re
+import sys
+import time
 
 
 def get_paths(base_dir):

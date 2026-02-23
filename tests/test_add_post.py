@@ -28,7 +28,7 @@ class TestAddPostBasic:
 
     def test_appends_to_existing_index(self, populated_index_file):
         dedup_check.add_post(str(populated_index_file), 303, "New topic here")
-        data = json.loads(populated_index_file.read_text())
+        data = dedup_check.load_index(str(populated_index_file))
         assert len(data) == 3
 
 

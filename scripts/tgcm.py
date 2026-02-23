@@ -198,9 +198,25 @@ def tg_api_call(token, method, params=None):
             data = json.loads(resp.read().decode())
         if data.get("ok"):
             return data.get("result")
+        desc = data.get("description", "unknown error")
+        print(f"Telegram API {method}: {desc}", file=sys.stderr)
+        return None
+    except urllib.error.HTTPError as e:
+        desc = f"HTTP {e.code}"
+        try:
+            body = json.loads(e.read().decode())
+            desc = body.get("description", desc)
+        except (json.JSONDecodeError, OSError):
+            pass
+        print(f"Telegram API {method}: {desc}", file=sys.stderr)
         return None
     except (urllib.error.URLError, OSError, json.JSONDecodeError, ValueError):
         return None
+
+
+def _yn(v):
+    """Format boolean as 'yes'/'no'."""
+    return "yes" if v else "no"
 
 
 def channel_info(workspace, name, bot_token, flags):
@@ -293,22 +309,21 @@ def channel_info(workspace, name, bot_token, flags):
                 "chat_id": channel_id, "user_id": bot_id,
             })
             if member:
-                yn = lambda v: "yes" if v else "no"
                 print("Bot permissions:")
                 print(f"  Role:              {member.get('status', 'unknown')}")
-                print(f"  Post messages:     {yn(member.get('can_post_messages'))}")
-                print(f"  Edit messages:     {yn(member.get('can_edit_messages'))}")
-                print(f"  Delete messages:   {yn(member.get('can_delete_messages'))}")
-                print(f"  Invite users:      {yn(member.get('can_invite_users'))}")
-                print(f"  Restrict members:  {yn(member.get('can_restrict_members'))}")
-                print(f"  Promote members:   {yn(member.get('can_promote_members'))}")
-                print(f"  Manage chat:       {yn(member.get('can_manage_chat'))}")
-                print(f"  Change info:       {yn(member.get('can_change_info'))}")
-                print(f"  Manage video chat: {yn(member.get('can_manage_video_chats'))}")
-                print(f"  Post stories:      {yn(member.get('can_post_stories'))}")
-                print(f"  Edit stories:      {yn(member.get('can_edit_stories'))}")
-                print(f"  Delete stories:    {yn(member.get('can_delete_stories'))}")
-                print(f"  Anonymous:         {yn(member.get('is_anonymous'))}")
+                print(f"  Post messages:     {_yn(member.get('can_post_messages'))}")
+                print(f"  Edit messages:     {_yn(member.get('can_edit_messages'))}")
+                print(f"  Delete messages:   {_yn(member.get('can_delete_messages'))}")
+                print(f"  Invite users:      {_yn(member.get('can_invite_users'))}")
+                print(f"  Restrict members:  {_yn(member.get('can_restrict_members'))}")
+                print(f"  Promote members:   {_yn(member.get('can_promote_members'))}")
+                print(f"  Manage chat:       {_yn(member.get('can_manage_chat'))}")
+                print(f"  Change info:       {_yn(member.get('can_change_info'))}")
+                print(f"  Manage video chat: {_yn(member.get('can_manage_video_chats'))}")
+                print(f"  Post stories:      {_yn(member.get('can_post_stories'))}")
+                print(f"  Edit stories:      {_yn(member.get('can_edit_stories'))}")
+                print(f"  Delete stories:    {_yn(member.get('can_delete_stories'))}")
+                print(f"  Anonymous:         {_yn(member.get('is_anonymous'))}")
             else:
                 print("Bot permissions: (API error)", file=sys.stderr)
         else:
@@ -380,7 +395,7 @@ def config_cmd(workspace, action, key=None, value=None):
         return 0
 
     if action == "set":
-        if not value:
+        if value is None:
             print(f"Value is required: tgcm.py config set {key} <value>", file=sys.stderr)
             return 1
         cfg = load_local_config(workspace)
@@ -566,8 +581,7 @@ def get_id(identifier, bot_token, workspace="."):
         print("Bot token not found (tried --bot-token, BOT_TOKEN, openclaw.json, tgcm/.config.json)", file=sys.stderr)
         return 1
 
-    chat_id = identifier if identifier.lstrip("-").isdigit() else identifier
-    result = tg_api_call(bot_token, "getChat", {"chat_id": chat_id})
+    result = tg_api_call(bot_token, "getChat", {"chat_id": identifier})
     if not result:
         print(f"Could not resolve '{identifier}' — check the username/ID and bot token", file=sys.stderr)
         return 1
@@ -636,6 +650,8 @@ def strip_html_tags(html_text):
     for entity, char in [('&amp;', '&'), ('&lt;', '<'), ('&gt;', '>'),
                           ('&quot;', '"'), ('&#39;', "'"), ('&nbsp;', ' ')]:
         text = text.replace(entity, char)
+    text = re.sub(r'&#x([0-9a-fA-F]+);', lambda m: chr(int(m.group(1), 16)), text)
+    text = re.sub(r'&#(\d+);', lambda m: chr(int(m.group(1))), text)
     return re.sub(r'\n{3,}', '\n\n', text).strip()
 
 
@@ -752,6 +768,7 @@ def fetch_posts_cmd(workspace, name, bot_token, limit, dry_run):
         all_posts.extend(posts)
         min_id = min(ids)
 
+        # t.me/s/ serves ~20 posts per page; fewer means we've reached the beginning
         if len(posts) < 10:
             break
 
