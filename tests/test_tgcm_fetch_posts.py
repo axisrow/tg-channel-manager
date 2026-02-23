@@ -82,6 +82,30 @@ class TestParseTmePostsExtractsLinks:
         assert "https://blog.example.com/post" in posts[0]["links"]
 
 
+class TestParseTmePostsNestedDivs:
+    """Text div with nested divs should capture full content."""
+
+    HTML = """
+    <div data-post="ch/5">
+      <div class="tgme_widget_message_text" dir="auto">
+        Opening paragraph with enough text to pass the minimum length filter.
+        <div class="quote">This is a blockquote inside a nested div element.</div>
+        And a closing paragraph after the nested div with more text content.
+      </div>
+      <time datetime="2025-01-01"></time>
+    </div>
+    """
+
+    def test_captures_text_after_nested_div(self):
+        posts = tgcm.parse_tme_posts(self.HTML)
+        assert len(posts) == 1
+        assert "closing paragraph" in posts[0]["text"]
+
+    def test_captures_text_inside_nested_div(self):
+        posts = tgcm.parse_tme_posts(self.HTML)
+        assert "blockquote" in posts[0]["text"]
+
+
 class TestStripHtmlTags:
     """strip_html_tags handles entities, <br>, nested tags, numeric entities."""
 

@@ -37,8 +37,12 @@ def log_perf(perf_log, action, duration_ms, details=""):
 def load_index(index_file):
     if not os.path.exists(index_file):
         return []
-    with open(index_file, "r") as f:
-        data = json.load(f)
+    try:
+        with open(index_file, "r") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"Warning: corrupt index {index_file}: {e}", file=sys.stderr)
+        return []
     if isinstance(data, dict) and "posts" in data:
         return data["posts"]
     return data
@@ -48,8 +52,11 @@ def save_index(index_file, index):
     # Preserve versioned wrapper if the file already has one
     wrapper = None
     if os.path.exists(index_file):
-        with open(index_file, "r") as f:
-            existing = json.load(f)
+        try:
+            with open(index_file, "r") as f:
+                existing = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            existing = None
         if isinstance(existing, dict) and "version" in existing:
             wrapper = {"version": existing["version"], "posts": index}
     with open(index_file, 'w') as f:

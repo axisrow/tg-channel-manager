@@ -452,7 +452,7 @@ def resolve_bot_token(cli_arg, workspace="."):
         if token:
             return token
     local = load_local_config(workspace)
-    if local.get("botToken"):
+    if local.get("botToken") is not None:
         return local["botToken"]
     return None
 
@@ -470,7 +470,7 @@ def resolve_token_source(cli_arg, workspace="."):
         if token:
             return token, f"openclaw.json ({config_path})"
     local = load_local_config(workspace)
-    if local.get("botToken"):
+    if local.get("botToken") is not None:
         return local["botToken"], "tgcm/.config.json"
     return None, None
 
@@ -682,15 +682,29 @@ def parse_tme_posts(html):
             continue
         msg_id = int(msg_match.group(1))
 
-        text_match = re.search(
-            r'class="tgme_widget_message_text[^"]*"[^>]*>(.*?)</div>',
-            block, re.DOTALL,
+        # Find the text div and extract full content respecting nesting
+        text_open = re.search(
+            r'class="tgme_widget_message_text[^"]*"[^>]*>', block,
         )
-        text = strip_html_tags(text_match.group(1)) if text_match else ""
+        raw = ""
+        if text_open:
+            after = block[text_open.end():]
+            depth = 1
+            pos = 0
+            for m in re.finditer(r'<div[^>]*>|</div>', after):
+                if m.group().startswith('</'):
+                    depth -= 1
+                else:
+                    depth += 1
+                if depth == 0:
+                    pos = m.start()
+                    break
+            raw = after[:pos] if pos else after
+        text = strip_html_tags(raw) if text_open else ""
 
         links = []
-        if text_match:
-            links = re.findall(r'href="(https?://[^"]+)"', text_match.group(1))
+        if text_open:
+            links = re.findall(r'href="(https?://[^"]+)"', raw)
 
         date_match = re.search(r'datetime="([^"]+)"', block)
         date = date_match.group(1) if date_match else ""
