@@ -210,7 +210,10 @@ def tg_api_call(token, method, params=None):
             pass
         print(f"Telegram API {method}: {desc}", file=sys.stderr)
         return None
-    except (urllib.error.URLError, OSError, json.JSONDecodeError, ValueError):
+    except (urllib.error.URLError, OSError) as e:
+        print(f"Telegram API {method}: {e}", file=sys.stderr)
+        return None
+    except (json.JSONDecodeError, ValueError):
         return None
 
 
@@ -391,7 +394,7 @@ def config_cmd(workspace, action, key=None, value=None):
     if action == "get":
         cfg = load_local_config(workspace)
         val = cfg.get(json_key)
-        print(val if val else "(not set)")
+        print(val if val is not None else "(not set)")
         return 0
 
     if action == "set":
@@ -735,8 +738,12 @@ def fetch_posts_cmd(workspace, name, bot_token, limit, dry_run):
     wrapper = None
     index_posts = []
     if os.path.exists(index_path):
-        with open(index_path, "r") as f:
-            index_data = json.load(f)
+        try:
+            with open(index_path, "r") as f:
+                index_data = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"Error reading index: {e}", file=sys.stderr)
+            return 1
         if isinstance(index_data, dict) and "posts" in index_data:
             index_posts = index_data["posts"]
             wrapper = index_data
