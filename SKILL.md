@@ -15,10 +15,118 @@ metadata:
 
 # TG Channel Manager
 
-Universal content engine for any Telegram channel.
 Pipeline: **scout → draft → human approves → publisher**.
 
-All specifics (topics, rubrics, style, filters) are defined in config — the skill contains zero hardcoded values.
+## Execution
+
+`python3` and `curl` are available in your environment (declared in `requires.bins`). Run all commands yourself using `exec`/`bash` tool. NEVER ask the user to run commands for you.
+
+## Startup
+
+When you load this skill, run the preflight check FIRST:
+
+```bash
+python3 {baseDir}/scripts/tgcm.py --workspace {workspace} check
+```
+
+**After check — act on results, don't ask:**
+- All `[ok]` → proceed with the user's task silently
+- `[fail] Bot token` → ask the user for the token, then save it: `tgcm.py config set bot-token <token>`. Do NOT ask where the token is or offer choices
+- `[warn] SEARXNG_URL` → ask the user for the URL, then save it: `tgcm.py config set searxng-url <url>`. Proceed without it — scout won't work but other commands will
+- `[fail] Channel` → report which channel failed and why, include the fix from the output
+- `[warn] No channels` → mention it, but proceed — the user may want to init one
+
+Settings saved via `config set` persist in `tgcm/.config.json` and are used by all subsequent commands.
+
+NEVER ask follow-up questions about check results. Report what's wrong and the fix from the output.
+If the user hasn't specified a task — just report the check status, nothing else.
+
+## CLI Reference (FULL list — NO other commands exist)
+
+All commands: `python3 {baseDir}/scripts/tgcm.py --workspace {workspace} <cmd>`
+
+| Command | What it does |
+|---------|-------------|
+| `init <name>` | Create a channel |
+| `list` | Show all channels |
+| `bind <name> --channel-id ID` | Bind channel to Telegram |
+| `info <name> [--chat] [--subscribers] [--permissions] [--admins] [--all]` | Channel status |
+| `get-id <@username\|ID>` | Resolve @username or numeric ID → full channel info (id, type, title) |
+| `check` | Preflight: verify bot token, channels, env vars |
+| `config set <key> <value>` | Save setting locally (keys: bot-token, searxng-url) |
+| `config get <key>` | Read a saved setting |
+| `config list` | Show all saved settings |
+| `fetch-posts <name> [--limit N] [--dry-run]` | Load channel posts into dedup index |
+| `connect --channel-id ID [--channel-title T]` | Handle #tgcm connect event |
+
+Bot token is auto-resolved: `--bot-token` arg → `$BOT_TOKEN` env → `openclaw.json` (auto-search) → `tgcm/.config.json`. Just call `tgcm.py get-id @username` without `--bot-token` — the script finds the token itself. If auto-detection fails, save it once: `tgcm.py config set bot-token <token>`.
+
+Channel name validation: `^[a-z0-9][a-z0-9_-]{0,62}$`.
+
+## Quick Reference
+
+| User says | Do this |
+|-----------|---------|
+| «узнай/определи channel-id» | `tgcm.py get-id @username` |
+| «подключи канал» | Recipe: Connect a channel (ниже) |
+| «какие каналы / список» | `tgcm.py list` |
+| «статус канала X» | `tgcm.py info X` |
+| «что в очереди» | `cat tgcm/<name>/content-queue.md` |
+| «загрузи посты / rebuild index» | `tgcm.py fetch-posts <name>` |
+
+## Recipes
+
+### Look up channel ID
+
+`python3 {baseDir}/scripts/tgcm.py get-id @username`
+
+Token is found automatically. Returns channel id, type, and title.
+
+### Connect a channel
+
+1. Get ID: `tgcm.py get-id @username`
+2. `tgcm.py init <name>`
+3. `tgcm.py bind <name> --channel-id <id>`
+4. Configure `skills.entries["tg-channel-manager"].config` in openclaw.json
+5. Add crons (see `{baseDir}/references/cron-setup.md`)
+
+### Load channel posts (rebuild dedup index)
+
+`python3 {baseDir}/scripts/tgcm.py --workspace {workspace} fetch-posts <name>`
+
+Fetches posts from the channel's public page (t.me/s/) and adds them to content-index.json.
+Options: `--limit N` (max pages, default 5), `--dry-run` (preview only).
+Requires: channel must be public (have a @username).
+
+### View channels / status
+
+- `tgcm.py list`
+- `tgcm.py info <name>`
+- Queue: `cat tgcm/<name>/content-queue.md`
+
+## Do NOT
+
+- Invent commands — the table above is the FULL list
+- Publish posts directly — only cron Publisher does this
+- Change draft → pending — only the human does this
+- Skip dedup-check before drafting
+- Ask the user to run commands — python3 and curl are available, use exec/bash yourself
+- Ask the user for bot token or env vars — token is auto-resolved, `check` shows what's wrong
+- Ask the user follow-up questions after `check` — report errors and the fix commands, don't offer choices
+- Ask whether it's a channel or group — `get-id` returns the `type` field, this skill is for channels only
+
+## Data Layout
+
+```
+tgcm/
+  channels.json            <- [{"name", "channelId", "status", "createdAt"}, ...]
+  {channel-name}/
+    channel.json           <- per-channel metadata
+    content-index.json     <- dedup index
+    content-queue.md       <- post queue
+```
+
+A channel is bound when `channelId` is set and `status` is `"connected"`.
 
 ## Configuration
 
@@ -70,12 +178,18 @@ Parameters are read from `openclaw.json` → `skills.entries["tg-channel-manager
 |-----------|------|-------------|
 | `env.SEARXNG_URL` | string | SearXNG instance URL |
 
-`{baseDir}` — path to the skill folder (where this file resides).
+### Path Resolution
 
-## Runtime Files
+| Variable | How to resolve |
+|----------|---------------|
+| `{workspace}` | Your CWD. Run `pwd` or use `--workspace .` |
+| `{baseDir}` | `{workspace}/skills/tg-channel-manager` |
 
-- **`content-queue.md`** — post queue (draft / pending). Located in the agent's workspace, NOT in the skill folder.
-- **`content-index.json`** — deduplication index. Located in the agent's workspace.
+In sandbox mode (`workspaceAccess: "none"`), the workspace is under `~/.openclaw/sandboxes`, not `~/.openclaw/workspace`. Always use CWD-relative paths.
+
+Cron setup: see `{baseDir}/references/cron-setup.md`.
+
+## Queue Format
 
 ### Entry Format in content-queue.md
 
@@ -91,52 +205,10 @@ Parameters are read from `openclaw.json` → `skills.entries["tg-channel-manager
 ```
 
 Statuses:
-- **draft** — draft, awaiting approval
+- **draft** — awaiting approval
 - **pending** — approved, ready for publishing
 
 After publishing, the entry is **removed** from content-queue.md.
-
-## Pipeline
-
-### 1. Scout (cron)
-
-Prompt: `{baseDir}/references/scout-prompt.md`
-
-1. Executes search queries from `config.searchQueries` via `$SEARXNG_URL`
-2. Filters by `config.searchInclude` / `config.searchExclude`
-3. Checks for duplicates via dedup-check.py
-4. Writes a draft to content-queue.md with **draft** status
-5. Maximum `config.maxDraftsPerRun` drafts per run
-6. If no news found — picks a topic from `config.evergreen`
-
-### 2. Approval (human)
-
-Human reviews draft → changes status to **pending**.
-
-### 3. Publisher (cron)
-
-Prompt: `{baseDir}/references/publisher-prompt.md`
-
-1. Reads content-queue.md
-2. Takes the first **pending** post
-3. Alternates rubrics when possible
-4. Appends signature from `config.postStyle.signature`
-5. Publishes via `message tool (action=send, channel=telegram, target=<config.channelId>)`
-6. Removes the entry from content-queue.md
-7. Adds to dedup index
-8. Maximum 1 post per run, `config.maxPostsPerDay` per day
-
-## Telegram API
-
-### Check published posts
-```
-message tool (action=search, channel=telegram, target=<config.channelId>, query="keywords")
-```
-
-### Publish a post
-```
-message tool (action=send, channel=telegram, target=<config.channelId>, text="post text")
-```
 
 ## Deduplication
 
@@ -158,36 +230,4 @@ python3 {baseDir}/scripts/dedup-check.py --base-dir <workspace> --add <msgId> --
 python3 {baseDir}/scripts/dedup-check.py --base-dir <workspace> --rebuild --channel-id <config.channelId>
 ```
 
-Index is stored in `<workspace>/content-index.json`.
-
-## SearXNG — News Search
-
-For each query from `config.searchQueries`:
-
-```bash
-curl '$SEARXNG_URL/search?q=<query>&format=json&time_range=day&language=en'
-```
-
-## Post Format
-
-Defined by `config.postStyle` parameters:
-
-- Title: emoji (if `emojiTitle`) + bold (if `boldTitle`)
-- Length: from `minChars` to `maxChars` characters
-- Language: from `config.language`
-- Signature: `config.postStyle.signature`
-- For news: link to original source + `newsFooter` (if not empty)
-- For articles: `articleFooter` (if not empty)
-- Prefer primary sources (specs, GitHub, official blogs) over summaries
-- All links https://
-- NO personal data
-
-## Rubrics
-
-Rubrics are defined in `config.rubrics`. Each rubric: `{id, emoji, name}`.
-
-Scout picks the appropriate rubric from the list when creating a draft.
-
-## Initial Cron Setup
-
-See `{baseDir}/references/cron-setup.md` — `openclaw cron add` command templates.
+Index is stored in `<workspace>/content-index.json` (or per-channel: `tgcm/<name>/content-index.json`).

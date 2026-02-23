@@ -33,12 +33,22 @@ def load_index(index_file):
     if not os.path.exists(index_file):
         return []
     with open(index_file, "r") as f:
-        return json.load(f)
+        data = json.load(f)
+    if isinstance(data, dict) and "posts" in data:
+        return data["posts"]
+    return data
 
 
 def save_index(index_file, index):
+    # Preserve versioned wrapper if the file already has one
+    wrapper = None
+    if os.path.exists(index_file):
+        with open(index_file, "r") as f:
+            existing = json.load(f)
+        if isinstance(existing, dict) and "version" in existing:
+            wrapper = {"version": existing["version"], "posts": index}
     with open(index_file, 'w') as f:
-        json.dump(index, f, ensure_ascii=False, indent=2)
+        json.dump(wrapper if wrapper else index, f, ensure_ascii=False, indent=2)
 
 
 def check_topic(topic, index):
@@ -152,7 +162,7 @@ if __name__ == '__main__':
         rebuild_index_instructions(channel_id)
         sys.exit(0)
 
-    if args.add and args.topic:
+    if args.add is not None and args.topic:
         added = add_post(paths['index'], args.add, args.topic, args.links)
         if added:
             print(f"✅ Post {args.add} added to index")
