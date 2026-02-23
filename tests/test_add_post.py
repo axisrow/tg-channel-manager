@@ -31,6 +31,15 @@ class TestAddPostBasic:
         data = dedup_check.load_index(str(populated_index_file))
         assert len(data) == 3
 
+    def test_add_to_versioned_empty_index(self, tmp_path):
+        f = tmp_path / "content-index.json"
+        f.write_text(json.dumps({"version": 1, "posts": []}))
+        result = dedup_check.add_post(str(f), 1, "Test topic here")
+        assert result is True
+        data = dedup_check.load_index(str(f))
+        assert len(data) == 1
+        assert data[0]["msgId"] == 1
+
 
 class TestAddPostFields:
     def test_stores_msgid(self, tmp_path):

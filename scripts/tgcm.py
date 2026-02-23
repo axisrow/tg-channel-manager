@@ -293,7 +293,7 @@ def channel_info(workspace, name, bot_token, flags):
         return 1
 
     channel_id = meta.get("channelId")
-    if not channel_id:
+    if channel_id is None:
         print("Channel is not bound to a Telegram channel", file=sys.stderr)
         return 1
 
@@ -552,7 +552,7 @@ def preflight_check(workspace, cli_bot_token):
     for ch in channel_dirs:
         name = ch["name"]
         channel_id = ch.get("channelId")
-        if not channel_id:
+        if channel_id is None:
             print(f'[warn] Channel "{name}": not bound (no channelId)')
             print(f'       Fix: run tgcm.py bind {name} --channel-id <id>')
             continue
