@@ -163,7 +163,7 @@ def add_post(index_file, msg_id, topic, links=None, keywords=None):
         'links': links or [],
         'keywords': keywords
     })
-    index.sort(key=lambda x: x['msgId'])
+    index.sort(key=lambda x: x.get('msgId') or 0)
     save_index(index_file, index)
     return True
 
