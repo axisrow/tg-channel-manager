@@ -431,7 +431,8 @@ def main(argv=None):
     print()
     summary = f'Summary: {len(posts)} posts, {len(all_errors)} error(s), {len(all_warnings)} warning(s)'
     if index_adds:
-        summary += f'\n  (synced {len(index_adds)} post(s) to index)'
+        verb = 'synced' if args.fix else 'would sync'
+        summary += f'\n  ({verb} {len(index_adds)} post(s) to index)'
     print(summary)
 
     return 1 if all_errors else 0
