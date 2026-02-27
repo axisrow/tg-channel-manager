@@ -4,6 +4,4 @@ content-perf.log
 tgcm/.config.json
 tgcm/channels.json
 __pycache__/
-usage-1.jpg
-usage-2.jpg
-usage-combined.jpg
+usage-*.jpg

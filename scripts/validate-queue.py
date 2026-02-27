@@ -297,7 +297,7 @@ def check_statuses(posts, index):
             keywords = list(extract_keywords(topic))
             links = [source] if source else []
             index_adds.append({
-                'msgId': 0,
+                'msgId': None,  # unknown; post was published outside fetch-posts
                 'topic': topic,
                 'links': links,
                 'keywords': keywords,
@@ -371,10 +371,10 @@ def main(argv=None):
     index = load_index(index_path)
     status_warnings, fixes, index_adds = check_statuses(posts, index)
 
-    # Auto-sync: add published posts missing from index
-    if index_adds:
+    # Auto-sync: add published posts missing from index (only with --fix)
+    if args.fix and index_adds:
         index.extend(index_adds)
-        index.sort(key=lambda x: x['msgId'])
+        index.sort(key=lambda x: x.get('msgId') or 0)
         save_index(index_path, index)
 
     all_errors = fmt_errors

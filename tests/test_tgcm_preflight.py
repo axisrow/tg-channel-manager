@@ -39,7 +39,9 @@ class TestPreflightSearxng:
         monkeypatch.delenv("SEARXNG_URL", raising=False)
         monkeypatch.delenv("BOT_TOKEN", raising=False)
         monkeypatch.chdir(tmp_path)
-        tgcm.preflight_check(str(tmp_path), None)
+        with patch.object(tgcm, "find_openclaw_config", return_value=None):
+            rc = tgcm.preflight_check(str(tmp_path), None)
+        assert rc == 1  # fails due to missing token, but SEARXNG warning still emitted
         out = capsys.readouterr().out
         assert "[warn] SEARXNG_URL" in out
 

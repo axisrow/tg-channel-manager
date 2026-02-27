@@ -17,6 +17,11 @@ tgcm_spec = importlib.util.spec_from_file_location("tgcm", TGCM_SCRIPT_PATH)
 tgcm = importlib.util.module_from_spec(tgcm_spec)
 tgcm_spec.loader.exec_module(tgcm)
 
+VALIDATE_SCRIPT_PATH = pathlib.Path(__file__).parent.parent / "scripts" / "validate-queue.py"
+vq_spec = importlib.util.spec_from_file_location("validate_queue", VALIDATE_SCRIPT_PATH)
+validate_queue = importlib.util.module_from_spec(vq_spec)
+vq_spec.loader.exec_module(validate_queue)
+
 
 @pytest.fixture()
 def sample_index():

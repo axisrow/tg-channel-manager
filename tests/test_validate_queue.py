@@ -201,7 +201,7 @@ class TestPublishedNotInIndexSync:
         index_file = tmp_path / "content-index.json"
         index_file.write_text(json.dumps({"version": 1, "posts": []}))
 
-        result = run_validate_cli("--base-dir", str(tmp_path))
+        result = run_validate_cli("--base-dir", str(tmp_path), "--fix")
         assert result.returncode == 0
 
         # Index should now contain the synced post
@@ -209,13 +209,13 @@ class TestPublishedNotInIndexSync:
         assert 'posts' in data
         assert len(data['posts']) == 1
         entry = data['posts'][0]
-        assert entry['msgId'] == 0
+        assert entry['msgId'] is None
         assert entry['topic'] == 'ChatGPT как стилист: капсульный гардероб'
         assert entry['links'] == ['https://example.com/article1']
         assert len(entry['keywords']) > 0
 
         # No warning emoji in output for this post
-        assert '\u26a0\ufe0f' not in result.stdout or 'published but post not found' not in result.stdout
+        assert 'published but post not found' not in result.stdout
 
         # Summary mentions sync
         assert 'synced 1 post(s) to index' in result.stdout
@@ -237,7 +237,7 @@ class TestPublishedNotInIndexSync:
         assert len(warnings) == 0
         assert len(fixes) == 0
         assert len(index_adds) == 1
-        assert index_adds[0]['msgId'] == 0
+        assert index_adds[0]['msgId'] is None
         assert index_adds[0]['topic'] == 'ChatGPT как стилист: капсульный гардероб'
         assert index_adds[0]['links'] == ['https://example.com/article1']
 
