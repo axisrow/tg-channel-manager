@@ -56,7 +56,7 @@ All commands: `python3 {baseDir}/scripts/tgcm.py --workspace {workspace} <cmd>`
 | `config set <key> <value>` | Save setting locally (keys: bot-token, searxng-url) |
 | `config get <key>` | Read a saved setting |
 | `config list` | Show all saved settings |
-| `fetch-posts <name> [--limit N] [--dry-run]` | Load channel posts into dedup index |
+| `fetch-posts <name> [--limit N] [--dry-run]` | Load channel posts into dedup index (requires public channel with @username) |
 | `connect --channel-id ID [--channel-title T]` | Handle #tgcm connect event |
 
 Bot token is auto-resolved: `--bot-token` arg → `$BOT_TOKEN` env → `openclaw.json` (auto-search) → `tgcm/.config.json`. Just call `tgcm.py get-id @username` without `--bot-token` — the script finds the token itself. If auto-detection fails, save it once: `tgcm.py config set bot-token <token>`.
@@ -84,9 +84,9 @@ Token is found automatically. Returns channel id, type, and title.
 
 ### Connect a channel
 
-1. Get ID: `tgcm.py get-id @username`
-2. `tgcm.py init <name>`
-3. `tgcm.py bind <name> --channel-id <id>`
+1. Get ID: `python3 {baseDir}/scripts/tgcm.py get-id @username`
+2. `python3 {baseDir}/scripts/tgcm.py --workspace {workspace} init <name>`
+3. `python3 {baseDir}/scripts/tgcm.py --workspace {workspace} bind <name> --channel-id <id>`
 4. Configure `skills.entries["tg-channel-manager"].config` in openclaw.json
 5. Add crons (see `{baseDir}/references/cron-setup.md`)
 

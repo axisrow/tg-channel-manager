@@ -31,6 +31,9 @@ from datetime import datetime, timezone
 
 CHANNEL_NAME_RE = re.compile(r'^[a-z0-9][a-z0-9_-]{0,62}$')
 
+MIN_POST_LENGTH = 50
+MIN_PAGE_SIZE = 10
+
 CONFIG_KEYS = {
     "bot-token": "botToken",
     "searxng-url": "searxngUrl",
@@ -89,7 +92,8 @@ def sync_channels_index(workspace):
                     "status": meta.get("status", "initialized"),
                     "createdAt": meta.get("createdAt", ""),
                 })
-            except (json.JSONDecodeError, KeyError, OSError):
+            except (json.JSONDecodeError, KeyError, OSError) as e:
+                print(f"[warn] skipping {entry}: {e}", file=sys.stderr)
                 continue
 
     index_path = os.path.join(root, "channels.json")
@@ -160,7 +164,8 @@ def channel_list(workspace):
             try:
                 meta = load_channel_meta(os.path.join(root, entry))
                 channels.append(meta)
-            except (json.JSONDecodeError, KeyError, OSError):
+            except (json.JSONDecodeError, KeyError, OSError) as e:
+                print(f"[warn] skipping {entry}: {e}", file=sys.stderr)
                 continue
 
     if not channels:
@@ -541,7 +546,8 @@ def preflight_check(workspace, cli_bot_token):
             try:
                 meta = load_channel_meta(os.path.join(root, entry))
                 channel_dirs.append(meta)
-            except (json.JSONDecodeError, KeyError, OSError):
+            except (json.JSONDecodeError, KeyError, OSError) as e:
+                print(f"[warn] skipping {entry}: {e}", file=sys.stderr)
                 continue
 
     if not channel_dirs:
@@ -644,7 +650,8 @@ def event_connect(workspace, channel_id, channel_title=None, dm_chat_id=None):
                             )
                         )
                         return 0
-                except (json.JSONDecodeError, KeyError, OSError):
+                except (json.JSONDecodeError, KeyError, OSError) as e:
+                    print(f"[warn] skipping {entry}: {e}", file=sys.stderr)
                     continue
 
     if not dm_chat_id:
@@ -674,8 +681,20 @@ def strip_html_tags(html_text):
     for entity, char in [('&amp;', '&'), ('&lt;', '<'), ('&gt;', '>'),
                           ('&quot;', '"'), ('&#39;', "'"), ('&nbsp;', ' ')]:
         text = text.replace(entity, char)
-    text = re.sub(r'&#x([0-9a-fA-F]+);', lambda m: chr(int(m.group(1), 16)), text)
-    text = re.sub(r'&#(\d+);', lambda m: chr(int(m.group(1))), text)
+    def _safe_chr_hex(m):
+        try:
+            return chr(int(m.group(1), 16))
+        except (ValueError, OverflowError):
+            return m.group(0)
+
+    def _safe_chr_dec(m):
+        try:
+            return chr(int(m.group(1)))
+        except (ValueError, OverflowError):
+            return m.group(0)
+
+    text = re.sub(r'&#x([0-9a-fA-F]{1,6});', _safe_chr_hex, text)
+    text = re.sub(r'&#(\d{1,7});', _safe_chr_dec, text)
     return re.sub(r'\n{3,}', '\n\n', text).strip()
 
 
@@ -683,7 +702,7 @@ def fetch_tme_page(username, before=None):
     """Fetch t.me/s/<username> HTML page. Returns HTML string."""
     url = f"https://t.me/s/{username}"
     if before:
-        url += f"?before={before}"
+        url += "?" + urllib.parse.urlencode({"before": before})
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(req, timeout=15) as resp:
         return resp.read().decode("utf-8", errors="replace")
@@ -726,7 +745,7 @@ def parse_tme_posts(html):
         date_match = re.search(r'datetime="([^"]+)"', block)
         date = date_match.group(1) if date_match else ""
 
-        if len(text) < 50:
+        if len(text) < MIN_POST_LENGTH:
             continue
 
         posts.append({
@@ -815,7 +834,7 @@ def fetch_posts_cmd(workspace, name, bot_token, limit, dry_run):
         min_id = min(ids)
 
         # t.me/s/ serves ~20 posts per page; fewer means we've reached the beginning
-        if len(posts) < 10:
+        if len(posts) < MIN_PAGE_SIZE:
             break
 
     if not all_posts:
