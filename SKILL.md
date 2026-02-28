@@ -58,8 +58,10 @@ All commands: `python3 {baseDir}/scripts/tgcm.py --workspace {workspace} <cmd>`
 | `config list` | Show all saved settings |
 | `fetch-posts <name> [--limit N] [--dry-run]` | Load channel posts into dedup index (requires public channel with @username) |
 | `connect --channel-id ID [--channel-title T]` | Handle #tgcm connect event |
+| `publish <name> --text TEXT [--photo URL] [--parse-mode MODE]` | Publish post to channel (auto-splits long text with photo) |
+| `validate <name> [--fix]` | Validate queue format and fix stale statuses |
 
-Bot token is auto-resolved: `--bot-token` arg → `$BOT_TOKEN` env → `openclaw.json` (auto-search) → `tgcm/.config.json`. Just call `tgcm.py get-id @username` without `--bot-token` — the script finds the token itself. If auto-detection fails, save it once: `tgcm.py config set bot-token <token>`.
+Bot token is auto-resolved: `--bot-token` arg → `.env` → `$TELEGRAM_BOT_TOKEN` env → `openclaw.json` (auto-search) → `tgcm/.config.json`. Just call `tgcm.py get-id @username` without `--bot-token` — the script finds the token itself. If auto-detection fails, save it once: `tgcm.py config set bot-token <token>` or create `.env` in workspace root with `TELEGRAM_BOT_TOKEN=<token>`.
 
 Channel name validation: `^[a-z0-9][a-z0-9_-]{0,62}$`.
 
@@ -107,7 +109,7 @@ Requires: channel must be public (have a @username).
 ## Do NOT
 
 - Invent commands — the table above is the FULL list
-- Publish posts directly — only cron Publisher does this
+- Publish posts directly without the `publish` command
 - Change draft → pending — only the human does this
 - Skip dedup-check before drafting
 - Ask the user to run commands — python3 and curl are available, use exec/bash yourself
@@ -199,6 +201,7 @@ Cron setup: see `{baseDir}/references/cron-setup.md`.
 - **Rubric:** <emoji> <name> (from config.rubrics)
 - **Topic:** <topic>
 - **Source:** <url> (for news)
+- **Author:** <name> (optional, source author)
 - **Text:**
 
 <post text>

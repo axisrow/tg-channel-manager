@@ -17,9 +17,9 @@ Publish one pending post from content-queue.md to the Telegram channel.
 6. Append the signature to the post text: `config.postStyle.signature`
 7. For news, add `config.postStyle.newsFooter` (if not empty)
 8. For articles, add `config.postStyle.articleFooter` (if not empty)
-9. Publish via:
-   ```
-   message tool (action=send, channel=telegram, target=<config.channelId>, text="post text")
+9. Publish to the channel:
+   ```bash
+   python3 {baseDir}/scripts/tgcm.py --workspace {workspace} publish <name> --text "post text" --photo "url"
    ```
 10. **Remove** the published entry from content-queue.md
 11. Add to the dedup index:

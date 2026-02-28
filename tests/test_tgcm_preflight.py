@@ -15,7 +15,7 @@ def _mock_api_ok(method_results):
 
 class TestPreflightNoToken:
     def test_fail_when_no_token(self, tmp_path, monkeypatch, capsys):
-        monkeypatch.delenv("BOT_TOKEN", raising=False)
+        monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
         monkeypatch.chdir(tmp_path)
         with patch.object(tgcm, "find_openclaw_config", return_value=None):
             rc = tgcm.preflight_check(str(tmp_path), None)
@@ -26,7 +26,7 @@ class TestPreflightNoToken:
 
 class TestPreflightGetMeFails:
     def test_fail_when_getme_fails(self, tmp_path, monkeypatch, capsys):
-        monkeypatch.setenv("BOT_TOKEN", "bad-token")
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "bad-token")
         with patch.object(tgcm, "tg_api_call", return_value=None):
             rc = tgcm.preflight_check(str(tmp_path), None)
         assert rc == 1
@@ -37,7 +37,7 @@ class TestPreflightGetMeFails:
 class TestPreflightSearxng:
     def test_warn_when_no_searxng(self, tmp_path, monkeypatch, capsys):
         monkeypatch.delenv("SEARXNG_URL", raising=False)
-        monkeypatch.delenv("BOT_TOKEN", raising=False)
+        monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
         monkeypatch.chdir(tmp_path)
         with patch.object(tgcm, "find_openclaw_config", return_value=None):
             rc = tgcm.preflight_check(str(tmp_path), None)
@@ -47,7 +47,7 @@ class TestPreflightSearxng:
 
     def test_ok_when_searxng_set(self, tmp_path, monkeypatch, capsys):
         monkeypatch.setenv("SEARXNG_URL", "http://localhost:8080")
-        monkeypatch.delenv("BOT_TOKEN", raising=False)
+        monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
         monkeypatch.chdir(tmp_path)
         tgcm.preflight_check(str(tmp_path), None)
         out = capsys.readouterr().out
@@ -56,7 +56,7 @@ class TestPreflightSearxng:
 
 class TestPreflightChannelNotBound:
     def test_warn_unbound_channel(self, tmp_path, monkeypatch, capsys):
-        monkeypatch.delenv("BOT_TOKEN", raising=False)
+        monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
         monkeypatch.delenv("SEARXNG_URL", raising=False)
         monkeypatch.chdir(tmp_path)
         tgcm.channel_init(str(tmp_path), "mychan")

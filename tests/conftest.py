@@ -8,6 +8,7 @@ import pytest
 
 SCRIPT_PATH = pathlib.Path(__file__).parent.parent / "scripts" / "dedup-check.py"
 TGCM_SCRIPT_PATH = pathlib.Path(__file__).parent.parent / "scripts" / "tgcm.py"
+VALIDATE_SCRIPT_PATH = pathlib.Path(__file__).parent.parent / "scripts" / "validate-queue.py"
 
 spec = importlib.util.spec_from_file_location("dedup_check", SCRIPT_PATH)
 dedup_check = importlib.util.module_from_spec(spec)
@@ -17,10 +18,9 @@ tgcm_spec = importlib.util.spec_from_file_location("tgcm", TGCM_SCRIPT_PATH)
 tgcm = importlib.util.module_from_spec(tgcm_spec)
 tgcm_spec.loader.exec_module(tgcm)
 
-VALIDATE_SCRIPT_PATH = pathlib.Path(__file__).parent.parent / "scripts" / "validate-queue.py"
-vq_spec = importlib.util.spec_from_file_location("validate_queue", VALIDATE_SCRIPT_PATH)
-validate_queue = importlib.util.module_from_spec(vq_spec)
-vq_spec.loader.exec_module(validate_queue)
+validate_spec = importlib.util.spec_from_file_location("validate_queue", VALIDATE_SCRIPT_PATH)
+validate_queue = importlib.util.module_from_spec(validate_spec)
+validate_spec.loader.exec_module(validate_queue)
 
 
 @pytest.fixture()
@@ -59,12 +59,10 @@ def run_cli(*args, base_dir=None):
     return subprocess.run(cmd, capture_output=True, text=True)
 
 
-def run_tgcm_cli(*args, workspace=None, dm_chat_id=None):
+def run_tgcm_cli(*args, workspace=None):
     cmd = [sys.executable, str(TGCM_SCRIPT_PATH)]
     if workspace is not None:
         cmd += ["--workspace", str(workspace)]
-    if dm_chat_id is not None:
-        cmd += ["--dm-chat-id", str(dm_chat_id)]
     cmd += list(args)
     return subprocess.run(cmd, capture_output=True, text=True)
 

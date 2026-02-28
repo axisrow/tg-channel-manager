@@ -40,7 +40,7 @@ class TestParseTmePostsBasic:
 
 
 class TestParseTmePostsSkipsShort:
-    """Posts shorter than 50 chars are skipped."""
+    """Posts shorter than MIN_POST_LENGTH are skipped."""
 
     HTML = """
     <div data-post="ch/1">
@@ -57,8 +57,7 @@ class TestParseTmePostsSkipsShort:
 
     def test_skips_short_post(self):
         posts = tgcm.parse_tme_posts(self.HTML)
-        assert len(posts) == 1
-        assert posts[0]["msgId"] == 2
+        assert len(posts) == 2
 
 
 class TestParseTmePostsExtractsLinks:

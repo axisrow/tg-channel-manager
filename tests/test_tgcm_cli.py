@@ -56,18 +56,11 @@ class TestCliConnect:
     def test_outputs_json(self, tmp_path):
         r = run_tgcm_cli(
             "connect", "--channel-id", "-100123",
-            workspace=str(tmp_path), dm_chat_id="456",
+            workspace=str(tmp_path),
         )
         assert r.returncode == 0
         data = json.loads(r.stdout)
-        assert data["action"] == "dm"
-
-    def test_missing_dm_chat_id_exit_1(self, tmp_path):
-        r = run_tgcm_cli(
-            "connect", "--channel-id", "-100123",
-            workspace=str(tmp_path),
-        )
-        assert r.returncode == 1
+        assert data["status"] == "new_channel"
 
 
 class TestCliGetId:

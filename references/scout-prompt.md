@@ -37,6 +37,7 @@ curl '$SEARXNG_URL/search?q=<query (URL-encoded)>&format=json&time_range=day&lan
    ```
    If matches found — DO NOT create a draft, move to the next news item.
 3. **MANDATORY** open the source and read its content. Do not write a post from a headline alone!
+   If the source has a named author — record it in **Author:** field.
 4. Write a draft following the format from SKILL.md, style per `config.postStyle`
 5. Pick a rubric from `config.rubrics` — choose the most fitting one
 

@@ -39,7 +39,7 @@ class TestFetchPostsCmdNotBound:
 
 class TestFetchPostsCmdNoToken:
     def test_returns_1(self, tgcm_workspace, monkeypatch, capsys):
-        monkeypatch.delenv("BOT_TOKEN", raising=False)
+        monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
         monkeypatch.chdir(tgcm_workspace)
         with patch.object(tgcm, "find_openclaw_config", return_value=None):
             rc = tgcm.fetch_posts_cmd(str(tgcm_workspace), "test-chan", None, 5, False)

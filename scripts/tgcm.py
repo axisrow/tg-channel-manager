@@ -9,16 +9,17 @@ Usage:
   tgcm.py [--workspace PATH] [--bot-token TOKEN] info <name> [--chat] [--subscribers] [--permissions] [--admins] [--all]
   tgcm.py [--bot-token TOKEN] get-id <@username|ID>
   tgcm.py [--workspace PATH] [--bot-token TOKEN] check
-  tgcm.py [--workspace PATH] [--dm-chat-id ID] connect --channel-id ID [--channel-title TITLE]
+  tgcm.py [--workspace PATH] connect --channel-id ID [--channel-title TITLE]
   tgcm.py [--workspace PATH] [--bot-token TOKEN] fetch-posts <name> [--limit N] [--dry-run]
   tgcm.py [--workspace PATH] config set <key> <value>
   tgcm.py [--workspace PATH] config get <key>
   tgcm.py [--workspace PATH] config list
 
-Bot token resolution order: --bot-token arg → BOT_TOKEN env → openclaw.json (auto-search) → tgcm/.config.json.
+Bot token resolution order: --bot-token arg → .env → TELEGRAM_BOT_TOKEN env → openclaw.json (auto-search) → tgcm/.config.json.
 """
 
 import argparse
+import importlib.util
 import json
 import os
 import re
@@ -31,7 +32,9 @@ from datetime import datetime, timezone
 
 CHANNEL_NAME_RE = re.compile(r'^[a-z0-9][a-z0-9_-]{0,62}$')
 
-MIN_POST_LENGTH = 50
+# Minimum length for posts imported from t.me/s/.
+# Keep it low so short announcements are still indexed for dedup/style.
+MIN_POST_LENGTH = 1
 MIN_PAGE_SIZE = 10
 
 CONFIG_KEYS = {
@@ -209,13 +212,21 @@ def channel_bind(workspace, name, channel_id):
     return 0
 
 
-def tg_api_call(token, method, params=None):
+def tg_api_call(token, method, params=None, json_body=None):
     """Call Telegram Bot API. Returns result dict or None on error."""
     url = f"https://api.telegram.org/bot{token}/{method}"
-    if params:
-        url += "?" + urllib.parse.urlencode(params)
+    if json_body:
+        data = json.dumps(json_body).encode()
+        req = urllib.request.Request(
+            url, data=data,
+            headers={"Content-Type": "application/json"},
+        )
+    else:
+        if params:
+            url += "?" + urllib.parse.urlencode(params)
+        req = url
     try:
-        with urllib.request.urlopen(url, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode())
         if data.get("ok"):
             return data.get("result")
@@ -237,6 +248,165 @@ def tg_api_call(token, method, params=None):
     except (json.JSONDecodeError, ValueError) as e:
         print(f"Telegram API {method}: invalid response: {e}", file=sys.stderr)
         return None
+
+
+def _split_text(text, limit):
+    """Split text at a natural boundary before *limit*.
+
+    Tries (in order): last ``\\n\\n``, last ``\\n``, last space.
+    Returns ``(head, tail)`` where ``len(head) <= limit``.
+
+    Avoids leaving an orphaned section header (``# …``) at the end of
+    *head* — if the last paragraph of *head* is a header line, the split
+    is moved to the previous paragraph break so the header stays with its
+    content.
+    """
+    if len(text) <= limit:
+        return text, ""
+    # Try paragraph break
+    pos = text.rfind("\n\n", 0, limit + 1)
+    if pos > 0:
+        # Guard against orphaned header at end of head
+        head = text[:pos]
+        last_nl = head.rfind("\n")
+        last_line = head[last_nl + 1:] if last_nl >= 0 else head
+        if last_line.lstrip().startswith("#"):
+            earlier = text.rfind("\n\n", 0, pos)
+            if earlier > 0:
+                return text[:earlier], text[earlier + 2:]
+        return head, text[pos + 2:]
+    # Try newline
+    pos = text.rfind("\n", 0, limit + 1)
+    if pos > 0:
+        return text[:pos], text[pos + 1:]
+    # Try space
+    pos = text.rfind(" ", 0, limit + 1)
+    if pos > 0:
+        return text[:pos], text[pos + 1:]
+    # Hard cut (shouldn't happen with real text)
+    return text[:limit], text[limit:]
+
+
+SENDPHOTO_CAPTION_LIMIT = 1024
+SENDMESSAGE_TEXT_LIMIT = 4096
+
+
+def publish_post(token, chat_id, text, photo_url=None, parse_mode=None,
+                 text_format=None, source_url=None):
+    """Publish post to channel. Splits long text with photo into 2 messages.
+
+    text_format: "md" converts markdown to Telegram HTML before sending,
+                 None or "plain" sends text as-is.
+    source_url: optional URL to append as source link at the end of the post.
+
+    Returns list of Telegram message dicts on success, or None on error.
+    """
+    convert = text_format == "md"
+    if convert:
+        parse_mode = "HTML"
+
+    results = []
+
+    if not photo_url:
+        # Text-only
+        content = md_to_tg_html(text) if convert else text
+        content = append_source_link(content, source_url, parse_mode)
+        params = {"chat_id": chat_id, "text": content[:SENDMESSAGE_TEXT_LIMIT]}
+        if parse_mode:
+            params["parse_mode"] = parse_mode
+        msg = tg_api_call(token, "sendMessage", json_body=params)
+        return [msg] if msg else None
+
+    if len(text) <= SENDPHOTO_CAPTION_LIMIT:
+        # Short text — single photo message
+        content = md_to_tg_html(text) if convert else text
+        content = append_source_link(content, source_url, parse_mode)
+        params = {"chat_id": chat_id, "photo": photo_url, "caption": content}
+        if parse_mode:
+            params["parse_mode"] = parse_mode
+        msg = tg_api_call(token, "sendPhoto", json_body=params)
+        return [msg] if msg else None
+
+    # Long text with photo — split on raw markdown, then convert each chunk
+    head, tail = _split_text(text, SENDPHOTO_CAPTION_LIMIT)
+    if convert:
+        head = md_to_tg_html(head)
+        tail = md_to_tg_html(tail)
+    tail = append_source_link(tail, source_url, parse_mode)
+
+    params1 = {"chat_id": chat_id, "photo": photo_url, "caption": head}
+    if parse_mode:
+        params1["parse_mode"] = parse_mode
+    msg1 = tg_api_call(token, "sendPhoto", json_body=params1)
+    if not msg1:
+        return None
+    results.append(msg1)
+
+    params2 = {"chat_id": chat_id, "text": tail}
+    if parse_mode:
+        params2["parse_mode"] = parse_mode
+    msg2 = tg_api_call(token, "sendMessage", json_body=params2)
+    if not msg2:
+        return None
+    results.append(msg2)
+
+    return results
+
+
+def append_source_link(text, source_url, parse_mode=None):
+    """Append source link to the end of post text.
+
+    Called AFTER md_to_tg_html() so the <a> tag is not escaped.
+    """
+    if not source_url:
+        return text
+    if parse_mode == "HTML":
+        return text + f'\n\n\U0001f517 <a href="{source_url}">Оригинал статьи</a>'
+    return text + f"\n\n\U0001f517 Оригинал статьи: {source_url}"
+
+
+def _find_queue_post(content, post_id):
+    """Find post by number in content-queue.md text.
+
+    Returns dict with 'source' and 'status' keys, or None if not found.
+    """
+    pattern = (
+        r'###\s+' + str(post_id) + r'\s*\n'
+        r'(?:- \*\*\w+:\*\*.*\n)*?'
+    )
+    match = re.search(pattern, content)
+    if not match:
+        return None
+    # Extract the metadata block after the ### header
+    start = match.start()
+    block = content[start:]
+    # Find next post header or end of content
+    next_post = re.search(r'\n###\s+\d+', block[4:])
+    if next_post:
+        block = block[:next_post.start() + 4]
+    source_match = re.search(r'- \*\*Source:\*\*\s*(.+)', block)
+    status_match = re.search(r'- \*\*Status:\*\*\s*(.+)', block)
+    return {
+        "source": source_match.group(1).strip() if source_match else None,
+        "status": status_match.group(1).strip() if status_match else None,
+    }
+
+
+def _update_queue_status(queue_path, post_id, new_status):
+    """Update Status of a specific post in content-queue.md file."""
+    with open(queue_path, "r", encoding="utf-8") as f:
+        content = f.read()
+    # Find the post header and its Status line
+    pattern = (
+        r'(###\s+' + str(post_id) + r'\s*\n'
+        r'- \*\*Status:\*\*)\s+\S+'
+    )
+    new_content, count = re.subn(pattern, r'\1 ' + new_status, content)
+    if count == 0:
+        return False
+    with open(queue_path, "w", encoding="utf-8") as f:
+        f.write(new_content)
+    return True
 
 
 def _yn(v):
@@ -294,7 +464,7 @@ def channel_info(workspace, name, bot_token, flags):
 
     bot_token = resolve_bot_token(bot_token, workspace)
     if not bot_token:
-        print("Bot token not found (tried --bot-token, BOT_TOKEN, openclaw.json, tgcm/.config.json)", file=sys.stderr)
+        print("Bot token not found (tried --bot-token, .env, TELEGRAM_BOT_TOKEN, openclaw.json, tgcm/.config.json)", file=sys.stderr)
         return 1
 
     channel_id = meta.get("channelId")
@@ -461,11 +631,38 @@ def get_bot_token_from_config(config_path):
         return None
 
 
+def load_dotenv_file(workspace="."):
+    """Load .env file from workspace root. Returns dict of key=value pairs."""
+    env_path = os.path.join(os.path.abspath(workspace), ".env")
+    result = {}
+    try:
+        with open(env_path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip()
+                # Strip surrounding quotes
+                if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+                    value = value[1:-1]
+                result[key] = value
+    except OSError:
+        pass
+    return result
+
+
 def resolve_bot_token(cli_arg, workspace="."):
-    """Resolve bot token: CLI arg → BOT_TOKEN env → openclaw.json → tgcm/.config.json."""
+    """Resolve bot token: CLI arg → .env → TELEGRAM_BOT_TOKEN env → openclaw.json → tgcm/.config.json."""
     if cli_arg:
         return cli_arg
-    env_token = os.environ.get("BOT_TOKEN")
+    dotenv = load_dotenv_file(workspace)
+    if dotenv.get("TELEGRAM_BOT_TOKEN"):
+        return dotenv["TELEGRAM_BOT_TOKEN"]
+    env_token = os.environ.get("TELEGRAM_BOT_TOKEN")
     if env_token:
         return env_token
     config_path = find_openclaw_config()
@@ -483,9 +680,12 @@ def resolve_token_source(cli_arg, workspace="."):
     """Return (token, source_label) or (None, None)."""
     if cli_arg:
         return cli_arg, "--bot-token arg"
-    env_token = os.environ.get("BOT_TOKEN")
+    dotenv = load_dotenv_file(workspace)
+    if dotenv.get("TELEGRAM_BOT_TOKEN"):
+        return dotenv["TELEGRAM_BOT_TOKEN"], ".env"
+    env_token = os.environ.get("TELEGRAM_BOT_TOKEN")
     if env_token:
-        return env_token, "BOT_TOKEN env"
+        return env_token, "TELEGRAM_BOT_TOKEN env"
     config_path = find_openclaw_config()
     if config_path:
         token = get_bot_token_from_config(config_path)
@@ -506,7 +706,7 @@ def preflight_check(workspace, cli_bot_token):
     if token:
         print(f"[ok]   Bot token: found (via {source})")
     else:
-        print("[fail] Bot token: not found (tried --bot-token, BOT_TOKEN, openclaw.json, tgcm/.config.json)")
+        print("[fail] Bot token: not found (tried --bot-token, .env, TELEGRAM_BOT_TOKEN, openclaw.json, tgcm/.config.json)")
         print("       Fix: run tgcm.py config set bot-token <your-token>")
         has_fail = True
 
@@ -608,7 +808,7 @@ def get_id(identifier, bot_token, workspace="."):
     """Look up a Telegram chat by @username or numeric ID."""
     bot_token = resolve_bot_token(bot_token, workspace)
     if not bot_token:
-        print("Bot token not found (tried --bot-token, BOT_TOKEN, openclaw.json, tgcm/.config.json)", file=sys.stderr)
+        print("Bot token not found (tried --bot-token, .env, TELEGRAM_BOT_TOKEN, openclaw.json, tgcm/.config.json)", file=sys.stderr)
         return 1
 
     result = tg_api_call(bot_token, "getChat", {"chat_id": identifier})
@@ -627,7 +827,7 @@ def get_id(identifier, bot_token, workspace="."):
     return 0
 
 
-def event_connect(workspace, channel_id, channel_title=None, dm_chat_id=None):
+def event_connect(workspace, channel_id, channel_title=None):
     """Handle #tgcm connect event from Telegram."""
     root = get_tgcm_root(workspace)
 
@@ -654,21 +854,15 @@ def event_connect(workspace, channel_id, channel_title=None, dm_chat_id=None):
                     print(f"[warn] skipping {entry}: {e}", file=sys.stderr)
                     continue
 
-    if not dm_chat_id:
-        print("--dm-chat-id is required for connect", file=sys.stderr)
-        return 1
-
     title_part = f" ({channel_title})" if channel_title else ""
-    text = (
-        f"Channel {channel_id}{title_part} wants to connect.\n"
-        f"Run: tgcm.py init <name> && "
-        f"tgcm.py bind <name> --channel-id {channel_id}"
-    )
-
     result = {
-        "action": "dm",
-        "chatId": dm_chat_id,
-        "text": text,
+        "status": "new_channel",
+        "channelId": channel_id,
+        "instructions": (
+            f"Channel {channel_id}{title_part} wants to connect.\n"
+            f"Run: tgcm.py init <name> && "
+            f"tgcm.py bind <name> --channel-id {channel_id}"
+        ),
     }
     print(json.dumps(result, ensure_ascii=False))
     return 0
@@ -696,6 +890,69 @@ def strip_html_tags(html_text):
     text = re.sub(r'&#x([0-9a-fA-F]{1,6});', _safe_chr_hex, text)
     text = re.sub(r'&#(\d{1,7});', _safe_chr_dec, text)
     return re.sub(r'\n{3,}', '\n\n', text).strip()
+
+
+def _escape_html(text):
+    """Escape &, <, > for Telegram HTML."""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _apply_inline(text):
+    """Apply inline markdown transforms on already-escaped text.
+
+    Converts **bold** → <b>bold</b> and `code` → <code>code</code>.
+    """
+    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+    text = re.sub(r'`([^`]+)`', r'<code>\1</code>', text)
+    return text
+
+
+def md_to_tg_html(text):
+    """Convert markdown text to Telegram-compatible HTML.
+
+    Supports: ### headers → <b>, **bold** → <b>, > quotes → <blockquote>,
+    `code` → <code>. Preserves paragraph breaks.
+    """
+    lines = text.split("\n")
+    result = []
+    bq_buffer = []
+
+    def _flush_bq():
+        if bq_buffer:
+            inner = "\n".join(bq_buffer)
+            result.append(f"<blockquote>{inner}</blockquote>")
+            bq_buffer.clear()
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Blockquote line
+        if stripped.startswith(">"):
+            content = stripped[1:].lstrip()
+            content = _escape_html(content)
+            content = _apply_inline(content)
+            bq_buffer.append(content)
+            continue
+
+        _flush_bq()
+
+        # Header line
+        header_match = re.match(r'^(#{1,6})\s+(.+)$', stripped)
+        if header_match:
+            header_text = header_match.group(2)
+            # Strip bold markers — header is already bold
+            header_text = header_text.replace("**", "")
+            header_text = _escape_html(header_text)
+            header_text = _apply_inline(header_text)
+            result.append(f"<b>{header_text}</b>")
+            continue
+
+        # Regular line
+        escaped = _escape_html(line)
+        result.append(_apply_inline(escaped))
+
+    _flush_bq()
+    return "\n".join(result)
 
 
 def fetch_tme_page(username, before=None):
@@ -883,10 +1140,6 @@ def build_parser():
         help="Path to workspace root",
     )
     parser.add_argument(
-        "--dm-chat-id", type=str, default=None,
-        help="DM chat ID for notifications",
-    )
-    parser.add_argument(
         "--bot-token", type=str, default=None,
         help="Telegram Bot API token",
     )
@@ -964,6 +1217,42 @@ def build_parser():
         "--channel-title", default=None, help="Channel title (optional)"
     )
 
+    # publish
+    publish_parser = subparsers.add_parser(
+        "publish", help="Publish post to channel (auto-splits long text with photo)"
+    )
+    publish_parser.add_argument("name", help="Channel name")
+    publish_parser.add_argument(
+        "--text", required=True, help="Post text"
+    )
+    publish_parser.add_argument(
+        "--photo", default=None, help="Photo URL (optional)"
+    )
+    publish_parser.add_argument(
+        "--parse-mode", default=None, help="Parse mode: HTML or MarkdownV2 (optional)"
+    )
+    publish_parser.add_argument(
+        "--format", default="md", choices=["md", "plain"],
+        help="Text format: 'md' converts markdown to HTML (default), 'plain' sends as-is"
+    )
+    publish_parser.add_argument(
+        "--source", default=None,
+        help="Source URL to append as link (optional; overrides Source from --post-id)"
+    )
+    publish_parser.add_argument(
+        "--post-id", default=None, type=int,
+        help="Post number in content-queue.md (enables auto-Source and auto-status update)"
+    )
+
+    # validate
+    validate_parser = subparsers.add_parser(
+        "validate", help="Validate content-queue format and statuses"
+    )
+    validate_parser.add_argument("name", help="Channel name")
+    validate_parser.add_argument(
+        "--fix", action="store_true", help="Auto-fix status inconsistencies"
+    )
+
     return parser
 
 
@@ -1013,8 +1302,83 @@ def main(argv=None):
             args.workspace,
             args.channel_id,
             channel_title=args.channel_title,
-            dm_chat_id=args.dm_chat_id,
         )
+
+    if args.command == "publish":
+        channel_dir = get_channel_dir(args.workspace, args.name)
+        if not os.path.isdir(channel_dir):
+            print(f"Channel '{args.name}' not found", file=sys.stderr)
+            return 1
+        try:
+            meta = load_channel_meta(channel_dir)
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"Error reading channel.json: {e}", file=sys.stderr)
+            return 1
+        channel_id = meta.get("channelId")
+        if not channel_id:
+            print(f"Channel '{args.name}' is not bound (no channelId)", file=sys.stderr)
+            return 1
+        bot_token = resolve_bot_token(args.bot_token, args.workspace)
+        if not bot_token:
+            print("Bot token not found", file=sys.stderr)
+            return 1
+
+        # Resolve source_url and queue post info
+        source_url = args.source
+        queue_path = os.path.join(channel_dir, "content-queue.md")
+        post_id = args.post_id
+        can_update_status = False
+
+        if post_id is not None:
+            try:
+                with open(queue_path, "r", encoding="utf-8") as f:
+                    queue_content = f.read()
+                post_info = _find_queue_post(queue_content, post_id)
+                if post_info:
+                    if not source_url and post_info.get("source"):
+                        source_url = post_info["source"]
+                    can_update_status = True
+                else:
+                    print(f"Warning: post #{post_id} not found in content-queue.md", file=sys.stderr)
+            except OSError:
+                print("Warning: content-queue.md not found", file=sys.stderr)
+
+        results = publish_post(
+            bot_token, channel_id, args.text,
+            photo_url=args.photo, parse_mode=args.parse_mode,
+            text_format=args.format, source_url=source_url,
+        )
+        if not results:
+            return 1
+
+        # Update status in content-queue.md after successful publish
+        status_updated = False
+        if post_id is not None and can_update_status:
+            status_updated = _update_queue_status(queue_path, post_id, "published")
+            if not status_updated:
+                print(f"Warning: failed to update status for post #{post_id}", file=sys.stderr)
+
+        ids = [r["message_id"] for r in results]
+        output = {"ok": True, "message_ids": ids}
+        if source_url:
+            output["source"] = source_url
+        if post_id is not None:
+            output["status_updated"] = status_updated
+        print(json.dumps(output))
+        return 0
+
+    if args.command == "validate":
+        channel_dir = get_channel_dir(args.workspace, args.name)
+        if not os.path.isdir(channel_dir):
+            print(f"Channel '{args.name}' not found", file=sys.stderr)
+            return 1
+        validate_script = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "validate-queue.py"
+        )
+        spec = importlib.util.spec_from_file_location("validate_queue", validate_script)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.main(["--base-dir", channel_dir] + (["--fix"] if args.fix else []))
 
     parser.print_help()
     return 1
